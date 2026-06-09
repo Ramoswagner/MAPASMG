@@ -12,14 +12,12 @@
   body { width: 100%; height: 100%; overflow: hidden; background: transparent; position: relative; }
   #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; }
   .leaflet-container { background: transparent !important; font-family: 'Segoe UI', sans-serif; }
-
   .lbl {
     font-size: 9px; font-weight: 700; color: #0F2549;
     white-space: nowrap; background: transparent; border: none; box-shadow: none;
     text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
     pointer-events: none;
   }
-
   .tooltip-mapa {
     background: rgba(15,37,73,0.92); color: #fff;
     border: 1px solid #C9A84C; border-radius: 6px;
@@ -27,7 +25,6 @@
     pointer-events: none;
   }
   .tooltip-mapa strong { color: #C9A84C; display: block; margin-bottom: 2px; }
-
   #status {
     position: absolute; inset: 0; display: flex;
     align-items: center; justify-content: center;
@@ -47,70 +44,16 @@
 <body>
 <div id="map"></div>
 <div id="status"><div class="spinner"></div><span>Carregando mapa…</span></div>
-
 <script>
 (function () {
   var GEOJSON_URL = 'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-31-mun.json';
 
-  // Cidades com nome visível no mapa
   var CIDADES_LABEL = new Set([
     'BELO HORIZONTE','UBERLÂNDIA','JUIZ DE FORA','MONTES CLAROS',
     'GOVERNADOR VALADARES','IPATINGA','SETE LAGOAS','DIVINÓPOLIS',
     'UBERABA','VARGINHA','PATOS DE MINAS','TEÓFILO OTONI',
     'POÇOS DE CALDAS','BETIM','CONTAGEM'
   ]);
-
-  // Lê dados do PBI via dataValues[0]
-  function lerDadosPBI() {
-    try {
-      if (typeof dataValues !== 'undefined' && dataValues && dataValues[0]) {
-        var raw = String(dataValues[0]).trim();
-        if (raw.startsWith('[')) return JSON.parse(raw);
-      }
-    } catch(e) {}
-    return null;
-  }
-
-  function buildAtendMap(dados) {
-    var m = {};
-    if (!dados) return m;
-    dados.forEach(function(d) {
-      if (d.cidade) m[d.cidade.toUpperCase().trim()] = Number(d.atend) || 0;
-    });
-    return m;
-  }
-
-  // Detecta cidades selecionadas no filtro do PBI
-  // Quando filtrado, só as cidades filtradas aparecem em atendMap
-  function getCidadesSelecionadas(atendMap, totalCidades) {
-    var keys = Object.keys(atendMap);
-    // Se muito menos cidades que o total, há filtro ativo
-    return keys.length < totalCidades * 0.5 ? new Set(keys) : null;
-  }
-
-  // Cor base (sem filtro): branco → navy proporcional ao volume
-  function getColorBase(atend, max) {
-    if (!atend || max === 0) return { fill: '#EEF2F7', opacity: 1 };
-    var t = Math.sqrt(atend / max);
-    var r = Math.round(238 + (15  - 238) * t);
-    var g = Math.round(242 + (37  - 242) * t);
-    var b = Math.round(247 + (73  - 247) * t);
-    return { fill: 'rgb(' + r + ',' + g + ',' + b + ')', opacity: 1 };
-  }
-
-  // Cor com filtro: cidade selecionada → navy forte, resto → apagado
-  function getColorFiltro(atend, max, isSelecionada) {
-    if (isSelecionada) {
-      var t = Math.max(0.4, Math.sqrt(atend / max));
-      var r = Math.round(238 + (15  - 238) * t);
-      var g = Math.round(242 + (37  - 242) * t);
-      var b = Math.round(247 + (73  - 247) * t);
-      return { fill: 'rgb(' + r + ',' + g + ',' + b + ')', opacity: 1 };
-    }
-    return { fill: '#E8EFF5', opacity: 0.35 };
-  }
-
-  function fmt(n) { return Number(n).toLocaleString('pt-BR'); }
 
   var map = L.map('map', {
     zoomControl: false, attributionControl: false,
@@ -120,6 +63,8 @@
   });
 
   var bounds = null;
+  var geoCache = null;
+  var geoLayer = null;
   var statusEl = document.getElementById('status');
 
   function reenquadrar() {
@@ -133,56 +78,119 @@
   }
   window.addEventListener('resize', reenquadrar);
 
+  function buildAtendMap(dados) {
+    var m = {};
+    if (!dados) return m;
+    dados.forEach(function(d) {
+      if (d.cidade) m[d.cidade.toUpperCase().trim()] = Number(d.atend) || 0;
+    });
+    return m;
+  }
+
+  function getColor(atend, max, temFiltro, isSelecionada) {
+    if (!temFiltro) {
+      // Sem filtro: escala branco → navy proporcional
+      if (!atend || max === 0) return { fill: '#FFFFFF', opacity: 0.5 };
+      var t = Math.sqrt(atend / max);
+      var r = Math.round(238 + (15  - 238) * t);
+      var g = Math.round(242 + (37  - 242) * t);
+      var b = Math.round(247 + (73  - 247) * t);
+      return { fill: 'rgb(' + r + ',' + g + ',' + b + ')', opacity: 1 };
+    } else {
+      // Com filtro: selecionada forte, resto apagado
+      if (isSelecionada) {
+        var t2 = Math.max(0.4, max > 0 ? Math.sqrt(atend / max) : 0.5);
+        var r2 = Math.round(238 + (15  - 238) * t2);
+        var g2 = Math.round(242 + (37  - 242) * t2);
+        var b2 = Math.round(247 + (73  - 247) * t2);
+        return { fill: 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')', opacity: 1 };
+      }
+      return { fill: '#FFFFFF', opacity: 0.15 };
+    }
+  }
+
+  function fmt(n) { return Number(n).toLocaleString('pt-BR'); }
+
+  // ── Redesenha camada com novos dados ─────────────────────────────
+  function renderMapa(dadosPBI) {
+    if (!geoCache) return;
+
+    var atendMap  = buildAtendMap(dadosPBI);
+    var temDados  = dadosPBI && dadosPBI.length > 0;
+    var maxAtend  = 0;
+
+    if (temDados) {
+      Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
+    }
+
+    // Detecta filtro ativo: menos de 50% das cidades com dados
+    var totalFeatures = geoCache.features.length;
+    var cidadesComDados = Object.keys(atendMap).length;
+    var temFiltro = temDados && cidadesComDados < totalFeatures * 0.5;
+    var selecionadas = temFiltro ? new Set(Object.keys(atendMap)) : null;
+
+    // Remove camada anterior
+    if (geoLayer) { map.removeLayer(geoLayer); }
+
+    geoLayer = L.geoJSON(geoCache, {
+      style: function(feature) {
+        var nome  = (feature.properties.name || '').toUpperCase().trim();
+        var atend = atendMap[nome] || 0;
+        var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
+        var cor   = temDados
+          ? getColor(atend, maxAtend, temFiltro, isSel)
+          : { fill: '#FFFFFF', opacity: 0.5 };
+        return {
+          color: '#9BA8B5', weight: 0.4,
+          fillColor: cor.fill, fillOpacity: cor.opacity
+        };
+      },
+      onEachFeature: function(feature, lyr) {
+        var nome  = feature.properties.name || '';
+        var nomeU = nome.toUpperCase().trim();
+        var atend = atendMap[nomeU] || 0;
+        var tip   = temDados
+          ? '<strong>' + nome + '</strong>' + fmt(atend) + ' atendimentos'
+          : '<strong>' + nome + '</strong>';
+        lyr.bindTooltip(tip, { className: 'tooltip-mapa', sticky: true });
+      }
+    }).addTo(map);
+
+    bounds = geoLayer.getBounds();
+    map.fitBounds(bounds, { padding: [8, 8], animate: false });
+    setTimeout(reenquadrar, 150);
+  }
+
+  // ── Escuta postMessage do Power BI ───────────────────────────────
+  window.addEventListener('message', function(event) {
+    try {
+      var raw = typeof event.data === 'string' ? event.data.trim() : '';
+      if (!raw.startsWith('[')) return;
+      var dados = JSON.parse(raw);
+      renderMapa(dados);
+    } catch(e) { console.warn('postMessage parse error:', e); }
+  });
+
+  // ── Também tenta dataValues (fallback HTML Content direto) ───────
+  function tryDataValues() {
+    try {
+      if (typeof dataValues !== 'undefined' && dataValues && dataValues[0]) {
+        var raw = String(dataValues[0]).trim();
+        if (raw.startsWith('[')) return JSON.parse(raw);
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  // ── Carrega GeoJSON uma vez ───────────────────────────────────────
   fetch(GEOJSON_URL)
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(geo) {
-      var dadosPBI  = lerDadosPBI();
-      var atendMap  = buildAtendMap(dadosPBI);
-      var temDados  = dadosPBI !== null && Object.keys(atendMap).length > 0;
+      geoCache = geo;
 
-      var totalCidades = geo.features.length;
-      var selecionadas = temDados ? getCidadesSelecionadas(atendMap, totalCidades) : null;
-      var temFiltro    = selecionadas !== null;
-
-      var maxAtend = 0;
-      if (temDados) {
-        Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
-      }
-
-      var layer = L.geoJSON(geo, {
-        style: function(feature) {
-          var nome  = (feature.properties.name || '').toUpperCase().trim();
-          var atend = atendMap[nome] || 0;
-          var cor;
-
-          if (!temDados) {
-            cor = { fill: '#D6E4F0', opacity: 1 };
-          } else if (temFiltro) {
-            cor = getColorFiltro(atend, maxAtend, selecionadas.has(nome));
-          } else {
-            cor = getColorBase(atend, maxAtend);
-          }
-
-          return {
-            color: '#0F2549',
-            weight: 0.6,
-            fillColor: cor.fill,
-            fillOpacity: cor.opacity
-          };
-        },
-        onEachFeature: function(feature, lyr) {
-          var nome  = (feature.properties.name || '');
-          var nomeU = nome.toUpperCase().trim();
-          var atend = atendMap[nomeU] || 0;
-          var tip   = temDados
-            ? '<strong>' + nome + '</strong>' + fmt(atend) + ' atendimentos'
-            : '<strong>' + nome + '</strong>';
-          lyr.bindTooltip(tip, { className: 'tooltip-mapa', sticky: true });
-        }
-      }).addTo(map);
-
-      bounds = layer.getBounds();
-      map.fitBounds(bounds, { padding: [8, 8], animate: false });
+      // Tenta dados iniciais via dataValues
+      var dadosIniciais = tryDataValues();
+      renderMapa(dadosIniciais);
 
       // Labels só nas cidades principais
       geo.features.forEach(function(f) {
