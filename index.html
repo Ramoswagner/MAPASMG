@@ -12,17 +12,19 @@
   body { width: 100%; height: 100%; overflow: hidden; background: transparent; position: relative; }
   #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; }
   .leaflet-container { background: transparent !important; font-family: 'Segoe UI', sans-serif; }
-  .lbl-capital {
-    font-size: 10px; font-weight: 800; color: #0F2549;
+  .lbl-cidade {
+    font-family: Arial, sans-serif;
+    font-size: 11px; font-weight: 700; color: #0F2549;
+    white-space: nowrap; background: transparent; border: none; box-shadow: none;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+    pointer-events: none;
+  }
+  .lbl-hospital {
+    font-family: Arial, sans-serif;
+    font-size: 12px; font-weight: 800; color: #0F2549;
     white-space: nowrap; background: transparent; border: none; box-shadow: none;
     text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 4px #fff;
-    pointer-events: none; letter-spacing: 0.3px;
-  }
-  .lbl-cidade {
-    font-size: 9px; font-weight: 700; color: #0F2549;
-    white-space: nowrap; background: transparent; border: none; box-shadow: none;
-    text-shadow: 0 0 3px #fff, 0 0 3px #fff;
-    pointer-events: none;
+    pointer-events: none; letter-spacing: 0.2px;
   }
   .tooltip-mapa {
     background: rgba(15,37,73,0.92); color: #fff;
@@ -56,18 +58,19 @@
 
   var BALEIA_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAMAAABF0y+mAAAAZlBMVEVHcEz////////s7PL////U1eDn6O+io7n5+fy0tce7vM3R097///////+rrcDv8PT///8hKGP///8QGVwCClcbImEuM2tsb5KGiKTy8vZdYIiVl6+kprve3+dBRnZ8fp1NUX68vs3GmHzGAAAAEXRSTlMAVQ6FIqKY723lwMI7L9XBRmfxff4AAAFcSURBVCiRdZLZYoQgDEXdEUdtgYTV9f9/skEcx5m2ecIcTG4uybIr+rJjjI11W2Sf0bJNpdD2Ub2himthjFYihlJrc2O5hdBWVbkqgYiE9ePFDKzDcfDKW0+lQX89a1pQ9Xmt7ouhZpZddTkI3f5SeOpcqMt/kH4Uz7KfMfioPvwNSzRU9p+mnQ40u2KvTNHWXd0fx9HvhzGX+NJqmtQfNjAzQ+yabCCPk4mIkTIvMX4BJ7tzviR/iS557CntkVArZxvgyYSCLstqkA7SXaUuhDgZ0pjrXU4g3gNxlnakpsFIaeCWjzVmKY/RG5gTxaSDJhGUmda4LkXYJJ1Bb5qgngwYJ6XD5nyWQHQ2JFABgKHfpNz46UmjJuloAcw+TbuLSHp7LdlDBBIMKU/hFtvfnob8VesTBeT35Ww0Iph9dm7eDdry7U01qIUzs+nF2/Fj5dvAOrK5GL77e70f0YUhtbcwQnAAAAAASUVORK5CYII=';
 
-  // Coordenadas do Hospital da Baleia
-  var HOSPITAL_LAT = -19.9227;
-  var HOSPITAL_LNG = -43.9451;
+  // Coordenadas exatas do Hospital da Baleia — R. Juramento, 1464, Saudade, BH
+  var HOSPITAL_LAT = -19.9089;
+  var HOSPITAL_LNG = -43.9180;
 
   function makePinSVG(size, color, borderColor, iconBase64) {
-    var imgSize = Math.round(size * 0.55);
+    var imgSize   = Math.round(size * 0.55);
     var imgOffset = Math.round((size - imgSize) / 2);
-    return '<svg width="' + size + '" height="' + Math.round(size * 1.3) + '" viewBox="0 0 ' + size + ' ' + Math.round(size*1.3) + '" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
-      '<defs><clipPath id="c' + size + '"><circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + (size/2 - 2) + '"/></clipPath></defs>' +
-      '<path d="M' + (size/2) + ' 1 C' + (size*0.15) + ' 1 1 ' + (size*0.35) + ' 1 ' + (size/2) + ' C1 ' + (size*0.78) + ' ' + (size/2) + ' ' + Math.round(size*1.28) + ' ' + (size/2) + ' ' + Math.round(size*1.28) + ' C' + (size/2) + ' ' + Math.round(size*1.28) + ' ' + (size-1) + ' ' + (size*0.78) + ' ' + (size-1) + ' ' + (size/2) + ' C' + (size-1) + ' ' + (size*0.35) + ' ' + (size*0.85) + ' 1 ' + (size/2) + ' 1Z" ' +
-      'fill="' + color + '" stroke="' + borderColor + '" stroke-width="1.5"/>' +
-      '<image x="' + imgOffset + '" y="' + imgOffset + '" width="' + imgSize + '" height="' + imgSize + '" href="' + iconBase64 + '" clip-path="url(#c' + size + ')"/>' +
+    var h         = Math.round(size * 1.3);
+    return '<svg width="'+size+'" height="'+h+'" viewBox="0 0 '+size+' '+h+'" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+      '<defs><clipPath id="c'+size+'"><circle cx="'+(size/2)+'" cy="'+(size/2)+'" r="'+(size/2-2)+'"/></clipPath></defs>' +
+      '<path d="M'+(size/2)+' 1 C'+(size*0.15)+' 1 1 '+(size*0.35)+' 1 '+(size/2)+' C1 '+(size*0.78)+' '+(size/2)+' '+Math.round(size*1.28)+' '+(size/2)+' '+Math.round(size*1.28)+' C'+(size/2)+' '+Math.round(size*1.28)+' '+(size-1)+' '+(size*0.78)+' '+(size-1)+' '+(size/2)+' C'+(size-1)+' '+(size*0.35)+' '+(size*0.85)+' 1 '+(size/2)+' 1Z" ' +
+      'fill="'+color+'" stroke="'+borderColor+'" stroke-width="1.5"/>' +
+      '<image x="'+imgOffset+'" y="'+imgOffset+'" width="'+imgSize+'" height="'+imgSize+'" href="'+iconBase64+'" clip-path="url(#c'+size+')"/>' +
       '</svg>';
   }
 
@@ -80,11 +83,9 @@
     });
   }
 
-  // Pin Hospital da Baleia — azul escuro, maior
   var PIN_HOSPITAL = makePinIcon(36, '#0F2549', '#071628');
-  // Pin cidades — azul médio, menor (tamanho varia com atendimentos)
   function getPinCidade(t) {
-    var size = Math.round(14 + t * 16); // 14px a 30px
+    var size = Math.round(14 + t * 16);
     return makePinIcon(size, '#3B7EC8', '#1E4A7A');
   }
 
@@ -95,12 +96,15 @@
     keyboard: false, tap: false, zoomSnap: 0.1
   });
 
-  var bounds      = null;
-  var geoCache    = null;
-  var geoLayer    = null;
-  var pinLayer    = null;
-  var labelLayer  = null;
-  var statusEl    = document.getElementById('status');
+  var bounds       = null;
+  var geoCache     = null;
+  var geoLayer     = null;
+  var pinLayer     = null;
+  var labelLayer   = null;
+  var statusEl     = document.getElementById('status');
+
+  // ── Estado atual dos dados — evita re-render desnecessário ───────
+  var ultimoJson   = null;
 
   function reenquadrar() {
     if (!bounds) return;
@@ -136,6 +140,14 @@
   function renderMapa(dadosPBI) {
     if (!geoCache) return;
 
+    // ── Evita re-render se os dados não mudaram ──────────────────
+    var jsonAtual = JSON.stringify(dadosPBI);
+    if (jsonAtual === ultimoJson) {
+      reenquadrar();
+      return;
+    }
+    ultimoJson = jsonAtual;
+
     var atendMap        = buildAtendMap(dadosPBI);
     var temDados        = dadosPBI && dadosPBI.length > 0;
     var maxAtend        = 0;
@@ -143,12 +155,14 @@
     var cidadesComDados = Object.keys(atendMap).length;
     var temFiltro       = temDados && cidadesComDados < totalFeatures * 0.5;
     var selecionadas    = temFiltro ? new Set(Object.keys(atendMap)) : null;
+    // Mostra nome só quando exatamente 1 cidade selecionada
+    var umaApenas       = temFiltro && cidadesComDados === 1;
 
     if (temDados) {
       Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
     }
 
-    // ── Polígonos ────────────────────────────────────────────────
+    // ── Polígonos ─────────────────────────────────────────────────
     if (geoLayer) map.removeLayer(geoLayer);
     geoLayer = L.geoJSON(geoCache, {
       style: function(feature) {
@@ -186,40 +200,43 @@
     if (pinLayer) map.removeLayer(pinLayer);
     pinLayer = L.layerGroup().addTo(map);
 
-    // Pins das cidades com atendimentos
     if (temDados) {
       geoCache.features.forEach(function(f) {
         var nome  = (f.properties.name || '').toUpperCase().trim();
         var atend = atendMap[nome] || 0;
         if (atend === 0) return;
-        var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
+        var isSel = !temFiltro || selecionadas.has(nome);
         if (!isSel) return;
-        if (nome === 'BELO HORIZONTE') return; // BH tem pin especial abaixo
-
-        var t    = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
-        var icon = getPinCidade(t);
-        var c    = getCentroid(f);
-
-        L.marker([c.lat, c.lng], { icon: icon, interactive: true, zIndexOffset: 100 })
+        if (nome === 'BELO HORIZONTE') return;
+        var t = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
+        var c = getCentroid(f);
+        L.marker([c.lat, c.lng], { icon: getPinCidade(t), interactive: true, zIndexOffset: 100 })
           .bindTooltip('<strong>' + f.properties.name + '</strong>' + fmt(atend) + ' atendimentos',
             { className: 'tooltip-mapa', sticky: true })
           .addTo(pinLayer);
       });
     }
 
-    // Pin do Hospital da Baleia — sempre presente
+    // Pin Hospital da Baleia — sempre presente
     L.marker([HOSPITAL_LAT, HOSPITAL_LNG], {
       icon: PIN_HOSPITAL, interactive: true, zIndexOffset: 1000
     })
-    .bindTooltip('<strong>Hospital da Baleia</strong>Belo Horizonte / MG',
+    .bindTooltip('<strong>Hospital da Baleia</strong>R. Juramento, 1464 — Saudade, BH/MG',
       { className: 'tooltip-mapa', sticky: true })
     .addTo(pinLayer);
 
-    // ── Labels ───────────────────────────────────────────────────
+    // ── Labels ────────────────────────────────────────────────────
     if (labelLayer) map.removeLayer(labelLayer);
     labelLayer = L.layerGroup().addTo(map);
 
-    if (temFiltro) {
+    // Label "Hospital da Baleia" — sempre visível, à direita do pin
+    L.marker([HOSPITAL_LAT - 0.04, HOSPITAL_LNG + 0.08], {
+      icon: L.divIcon({ className: 'lbl-hospital', html: 'Hospital da Baleia', iconSize: null, iconAnchor: [0, 0] }),
+      interactive: false, keyboard: false
+    }).addTo(labelLayer);
+
+    // Nome da cidade — só quando exatamente 1 cidade selecionada
+    if (umaApenas) {
       geoCache.features.forEach(function(f) {
         var nome  = f.properties.name || '';
         var nomeU = nome.toUpperCase().trim();
@@ -235,6 +252,7 @@
     setTimeout(reenquadrar, 150);
   }
 
+  // ── postMessage do Power BI ───────────────────────────────────
   window.addEventListener('message', function(event) {
     try {
       var raw = typeof event.data === 'string' ? event.data.trim() : '';
@@ -257,7 +275,6 @@
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(geo) {
       geoCache = geo;
-      // Pré-calcula centroides
       geo.features.forEach(function(f) { getCentroid(f); });
       renderMapa(tryDataValues());
       statusEl.classList.add('hidden');
