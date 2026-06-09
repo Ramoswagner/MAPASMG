@@ -12,10 +12,16 @@
   body { width: 100%; height: 100%; overflow: hidden; background: transparent; position: relative; }
   #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; }
   .leaflet-container { background: transparent !important; font-family: 'Segoe UI', sans-serif; }
-  .lbl {
+  .lbl-capital {
+    font-size: 10px; font-weight: 800; color: #0F2549;
+    white-space: nowrap; background: transparent; border: none; box-shadow: none;
+    text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 4px #fff;
+    pointer-events: none; letter-spacing: 0.3px;
+  }
+  .lbl-cidade {
     font-size: 9px; font-weight: 700; color: #0F2549;
     white-space: nowrap; background: transparent; border: none; box-shadow: none;
-    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff;
     pointer-events: none;
   }
   .tooltip-mapa {
@@ -48,13 +54,6 @@
 (function () {
   var GEOJSON_URL = 'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-31-mun.json';
 
-  var CIDADES_LABEL = new Set([
-    'BELO HORIZONTE','UBERLÂNDIA','JUIZ DE FORA','MONTES CLAROS',
-    'GOVERNADOR VALADARES','IPATINGA','SETE LAGOAS','DIVINÓPOLIS',
-    'UBERABA','VARGINHA','PATOS DE MINAS','TEÓFILO OTONI',
-    'POÇOS DE CALDAS','BETIM','CONTAGEM'
-  ]);
-
   var map = L.map('map', {
     zoomControl: false, attributionControl: false,
     dragging: false, scrollWheelZoom: false,
@@ -62,10 +61,12 @@
     keyboard: false, tap: false, zoomSnap: 0.1
   });
 
-  var bounds = null;
-  var geoCache = null;
-  var geoLayer = null;
-  var statusEl = document.getElementById('status');
+  var bounds       = null;
+  var geoCache     = null;
+  var geoLayer     = null;
+  var bubbleLayer  = null;
+  var labelLayer   = null;
+  var statusEl     = document.getElementById('status');
 
   function reenquadrar() {
     if (!bounds) return;
@@ -87,31 +88,18 @@
     return m;
   }
 
-  function getColor(atend, max, temFiltro, isSelecionada) {
-    if (!temFiltro) {
-      // Sem filtro: escala branco → navy proporcional
-      if (!atend || max === 0) return { fill: '#FFFFFF', opacity: 0.5 };
-      var t = Math.sqrt(atend / max);
-      var r = Math.round(238 + (15  - 238) * t);
-      var g = Math.round(242 + (37  - 242) * t);
-      var b = Math.round(247 + (73  - 247) * t);
-      return { fill: 'rgb(' + r + ',' + g + ',' + b + ')', opacity: 1 };
-    } else {
-      // Com filtro: selecionada forte, resto apagado
-      if (isSelecionada) {
-        var t2 = Math.max(0.4, max > 0 ? Math.sqrt(atend / max) : 0.5);
-        var r2 = Math.round(238 + (15  - 238) * t2);
-        var g2 = Math.round(242 + (37  - 242) * t2);
-        var b2 = Math.round(247 + (73  - 247) * t2);
-        return { fill: 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')', opacity: 1 };
-      }
-      return { fill: '#FFFFFF', opacity: 0.15 };
-    }
-  }
-
   function fmt(n) { return Number(n).toLocaleString('pt-BR'); }
 
-  // ── Redesenha camada com novos dados ─────────────────────────────
+  // Centroide aproximado de cada município via bounds
+  var centroidCache = {};
+  function getCentroid(feature) {
+    var nome = (feature.properties.name || '').toUpperCase().trim();
+    if (centroidCache[nome]) return centroidCache[nome];
+    var c = L.geoJSON(feature).getBounds().getCenter();
+    centroidCache[nome] = c;
+    return c;
+  }
+
   function renderMapa(dadosPBI) {
     if (!geoCache) return;
 
@@ -123,27 +111,34 @@
       Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
     }
 
-    // Detecta filtro ativo: menos de 50% das cidades com dados
-    var totalFeatures = geoCache.features.length;
+    var totalFeatures   = geoCache.features.length;
     var cidadesComDados = Object.keys(atendMap).length;
-    var temFiltro = temDados && cidadesComDados < totalFeatures * 0.5;
-    var selecionadas = temFiltro ? new Set(Object.keys(atendMap)) : null;
+    var temFiltro       = temDados && cidadesComDados < totalFeatures * 0.5;
+    var selecionadas    = temFiltro ? new Set(Object.keys(atendMap)) : null;
 
-    // Remove camada anterior
-    if (geoLayer) { map.removeLayer(geoLayer); }
+    // ── Camada de polígonos ──────────────────────────────────────
+    if (geoLayer) map.removeLayer(geoLayer);
 
     geoLayer = L.geoJSON(geoCache, {
       style: function(feature) {
         var nome  = (feature.properties.name || '').toUpperCase().trim();
-        var atend = atendMap[nome] || 0;
         var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
-        var cor   = temDados
-          ? getColor(atend, maxAtend, temFiltro, isSel)
-          : { fill: '#FFFFFF', opacity: 0.5 };
-        return {
-          color: '#9BA8B5', weight: 0.4,
-          fillColor: cor.fill, fillOpacity: cor.opacity
-        };
+
+        if (!temDados) {
+          // Sem dados: off-white limpo
+          return { color: '#C8D0D8', weight: 0.4, fillColor: '#F5F6F7', fillOpacity: 1 };
+        }
+        if (temFiltro && !isSel) {
+          // Não selecionada: apagada
+          return { color: '#D0D8E0', weight: 0.3, fillColor: '#F5F6F7', fillOpacity: 0.5 };
+        }
+        // Com dados: escala branco → navy
+        var atend = atendMap[nome] || 0;
+        var t = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
+        var r = Math.round(238 + (15  - 238) * t);
+        var g = Math.round(242 + (37  - 242) * t);
+        var b = Math.round(247 + (73  - 247) * t);
+        return { color: '#9BA8B5', weight: 0.4, fillColor: 'rgb('+r+','+g+','+b+')', fillOpacity: 1 };
       },
       onEachFeature: function(feature, lyr) {
         var nome  = feature.properties.name || '';
@@ -158,20 +153,77 @@
 
     bounds = geoLayer.getBounds();
     map.fitBounds(bounds, { padding: [8, 8], animate: false });
+
+    // ── Camada de bolhas ─────────────────────────────────────────
+    if (bubbleLayer) map.removeLayer(bubbleLayer);
+    bubbleLayer = L.layerGroup().addTo(map);
+
+    if (temDados) {
+      geoCache.features.forEach(function(f) {
+        var nome  = (f.properties.name || '').toUpperCase().trim();
+        var atend = atendMap[nome] || 0;
+        if (atend === 0) return;
+
+        var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
+        if (!isSel) return;
+
+        var c      = getCentroid(f);
+        var t      = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
+        var radius = 3 + t * 18; // entre 3px e 21px
+
+        L.circleMarker([c.lat, c.lng], {
+          radius:      radius,
+          fillColor:   '#C9A84C',
+          color:       '#9B7A2A',
+          weight:      1,
+          fillOpacity: 0.75,
+          interactive: false
+        }).addTo(bubbleLayer);
+      });
+    }
+
+    // ── Camada de labels ─────────────────────────────────────────
+    if (labelLayer) map.removeLayer(labelLayer);
+    labelLayer = L.layerGroup().addTo(map);
+
+    if (temFiltro) {
+      // Filtro ativo: só o nome da(s) cidade(s) selecionada(s)
+      geoCache.features.forEach(function(f) {
+        var nome  = f.properties.name || '';
+        var nomeU = nome.toUpperCase().trim();
+        if (!selecionadas.has(nomeU)) return;
+        var c = getCentroid(f);
+        L.marker([c.lat, c.lng], {
+          icon: L.divIcon({ className: 'lbl-cidade', html: nome, iconSize: null }),
+          interactive: false, keyboard: false
+        }).addTo(labelLayer);
+      });
+    } else {
+      // Sem filtro: só Belo Horizonte
+      geoCache.features.forEach(function(f) {
+        var nome  = f.properties.name || '';
+        var nomeU = nome.toUpperCase().trim();
+        if (nomeU !== 'BELO HORIZONTE') return;
+        var c = getCentroid(f);
+        L.marker([c.lat, c.lng], {
+          icon: L.divIcon({ className: 'lbl-capital', html: nome, iconSize: null }),
+          interactive: false, keyboard: false
+        }).addTo(labelLayer);
+      });
+    }
+
     setTimeout(reenquadrar, 150);
   }
 
-  // ── Escuta postMessage do Power BI ───────────────────────────────
+  // ── Escuta postMessage do Power BI ───────────────────────────
   window.addEventListener('message', function(event) {
     try {
       var raw = typeof event.data === 'string' ? event.data.trim() : '';
       if (!raw.startsWith('[')) return;
-      var dados = JSON.parse(raw);
-      renderMapa(dados);
-    } catch(e) { console.warn('postMessage parse error:', e); }
+      renderMapa(JSON.parse(raw));
+    } catch(e) { console.warn('postMessage error:', e); }
   });
 
-  // ── Também tenta dataValues (fallback HTML Content direto) ───────
   function tryDataValues() {
     try {
       if (typeof dataValues !== 'undefined' && dataValues && dataValues[0]) {
@@ -182,28 +234,12 @@
     return null;
   }
 
-  // ── Carrega GeoJSON uma vez ───────────────────────────────────────
+  // ── Carrega GeoJSON ──────────────────────────────────────────
   fetch(GEOJSON_URL)
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(geo) {
       geoCache = geo;
-
-      // Tenta dados iniciais via dataValues
-      var dadosIniciais = tryDataValues();
-      renderMapa(dadosIniciais);
-
-      // Labels só nas cidades principais
-      geo.features.forEach(function(f) {
-        var nome  = f.properties.name || '';
-        var nomeU = nome.toUpperCase().trim();
-        if (!CIDADES_LABEL.has(nomeU)) return;
-        var c = L.geoJSON(f).getBounds().getCenter();
-        L.marker(c, {
-          icon: L.divIcon({ className: 'lbl', html: nome, iconSize: null }),
-          interactive: false, keyboard: false
-        }).addTo(map);
-      });
-
+      renderMapa(tryDataValues());
       statusEl.classList.add('hidden');
       setTimeout(reenquadrar, 200);
     })
