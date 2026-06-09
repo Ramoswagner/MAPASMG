@@ -271,8 +271,27 @@
     return null;
   }
 
-  fetch(GEOJSON_URL)
-    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  // Tenta carregar GeoJSON do cache local primeiro
+  function carregarGeo() {
+    return new Promise(function(resolve, reject) {
+      try {
+        var cached = sessionStorage.getItem('mg_geo_v1');
+        if (cached) {
+          resolve(JSON.parse(cached));
+          return;
+        }
+      } catch(e) {}
+      fetch(GEOJSON_URL)
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(geo) {
+          try { sessionStorage.setItem('mg_geo_v1', JSON.stringify(geo)); } catch(e) {}
+          resolve(geo);
+        })
+        .catch(reject);
+    });
+  }
+
+  carregarGeo()
     .then(function(geo) {
       geoCache = geo;
       geo.features.forEach(function(f) { getCentroid(f); });
