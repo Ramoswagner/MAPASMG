@@ -54,6 +54,40 @@
 (function () {
   var GEOJSON_URL = 'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-31-mun.json';
 
+  var BALEIA_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAMAAABF0y+mAAAAZlBMVEVHcEz////////s7PL////U1eDn6O+io7n5+fy0tce7vM3R097///////+rrcDv8PT///8hKGP///8QGVwCClcbImEuM2tsb5KGiKTy8vZdYIiVl6+kprve3+dBRnZ8fp1NUX68vs3GmHzGAAAAEXRSTlMAVQ6FIqKY723lwMI7L9XBRmfxff4AAAFcSURBVCiRdZLZYoQgDEXdEUdtgYTV9f9/skEcx5m2ecIcTG4uybIr+rJjjI11W2Sf0bJNpdD2Ub2himthjFYihlJrc2O5hdBWVbkqgYiE9ePFDKzDcfDKW0+lQX89a1pQ9Xmt7ouhZpZddTkI3f5SeOpcqMt/kH4Uz7KfMfioPvwNSzRU9p+mnQ40u2KvTNHWXd0fx9HvhzGX+NJqmtQfNjAzQ+yabCCPk4mIkTIvMX4BJ7tzviR/iS557CntkVArZxvgyYSCLstqkA7SXaUuhDgZ0pjrXU4g3gNxlnakpsFIaeCWjzVmKY/RG5gTxaSDJhGUmda4LkXYJJ1Bb5qgngwYJ6XD5nyWQHQ2JFABgKHfpNz46UmjJuloAcw+TbuLSHp7LdlDBBIMKU/hFtvfnob8VesTBeT35Ww0Iph9dm7eDdry7U01qIUzs+nF2/Fj5dvAOrK5GL77e70f0YUhtbcwQnAAAAAASUVORK5CYII=';
+
+  // Coordenadas do Hospital da Baleia
+  var HOSPITAL_LAT = -19.9227;
+  var HOSPITAL_LNG = -43.9451;
+
+  function makePinSVG(size, color, borderColor, iconBase64) {
+    var imgSize = Math.round(size * 0.55);
+    var imgOffset = Math.round((size - imgSize) / 2);
+    return '<svg width="' + size + '" height="' + Math.round(size * 1.3) + '" viewBox="0 0 ' + size + ' ' + Math.round(size*1.3) + '" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+      '<defs><clipPath id="c' + size + '"><circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + (size/2 - 2) + '"/></clipPath></defs>' +
+      '<path d="M' + (size/2) + ' 1 C' + (size*0.15) + ' 1 1 ' + (size*0.35) + ' 1 ' + (size/2) + ' C1 ' + (size*0.78) + ' ' + (size/2) + ' ' + Math.round(size*1.28) + ' ' + (size/2) + ' ' + Math.round(size*1.28) + ' C' + (size/2) + ' ' + Math.round(size*1.28) + ' ' + (size-1) + ' ' + (size*0.78) + ' ' + (size-1) + ' ' + (size/2) + ' C' + (size-1) + ' ' + (size*0.35) + ' ' + (size*0.85) + ' 1 ' + (size/2) + ' 1Z" ' +
+      'fill="' + color + '" stroke="' + borderColor + '" stroke-width="1.5"/>' +
+      '<image x="' + imgOffset + '" y="' + imgOffset + '" width="' + imgSize + '" height="' + imgSize + '" href="' + iconBase64 + '" clip-path="url(#c' + size + ')"/>' +
+      '</svg>';
+  }
+
+  function makePinIcon(size, color, borderColor) {
+    return L.divIcon({
+      className: '',
+      html: makePinSVG(size, color, borderColor, BALEIA_ICON),
+      iconSize:   [size, Math.round(size * 1.3)],
+      iconAnchor: [size / 2, Math.round(size * 1.3)]
+    });
+  }
+
+  // Pin Hospital da Baleia — azul escuro, maior
+  var PIN_HOSPITAL = makePinIcon(36, '#0F2549', '#071628');
+  // Pin cidades — azul médio, menor (tamanho varia com atendimentos)
+  function getPinCidade(t) {
+    var size = Math.round(14 + t * 16); // 14px a 30px
+    return makePinIcon(size, '#3B7EC8', '#1E4A7A');
+  }
+
   var map = L.map('map', {
     zoomControl: false, attributionControl: false,
     dragging: false, scrollWheelZoom: false,
@@ -61,12 +95,12 @@
     keyboard: false, tap: false, zoomSnap: 0.1
   });
 
-  var bounds       = null;
-  var geoCache     = null;
-  var geoLayer     = null;
-  var bubbleLayer  = null;
-  var labelLayer   = null;
-  var statusEl     = document.getElementById('status');
+  var bounds      = null;
+  var geoCache    = null;
+  var geoLayer    = null;
+  var pinLayer    = null;
+  var labelLayer  = null;
+  var statusEl    = document.getElementById('status');
 
   function reenquadrar() {
     if (!bounds) return;
@@ -90,7 +124,6 @@
 
   function fmt(n) { return Number(n).toLocaleString('pt-BR'); }
 
-  // Centroide aproximado de cada município via bounds
   var centroidCache = {};
   function getCentroid(feature) {
     var nome = (feature.properties.name || '').toUpperCase().trim();
@@ -103,36 +136,31 @@
   function renderMapa(dadosPBI) {
     if (!geoCache) return;
 
-    var atendMap  = buildAtendMap(dadosPBI);
-    var temDados  = dadosPBI && dadosPBI.length > 0;
-    var maxAtend  = 0;
-
-    if (temDados) {
-      Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
-    }
-
+    var atendMap        = buildAtendMap(dadosPBI);
+    var temDados        = dadosPBI && dadosPBI.length > 0;
+    var maxAtend        = 0;
     var totalFeatures   = geoCache.features.length;
     var cidadesComDados = Object.keys(atendMap).length;
     var temFiltro       = temDados && cidadesComDados < totalFeatures * 0.5;
     var selecionadas    = temFiltro ? new Set(Object.keys(atendMap)) : null;
 
-    // ── Camada de polígonos ──────────────────────────────────────
-    if (geoLayer) map.removeLayer(geoLayer);
+    if (temDados) {
+      Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
+    }
 
+    // ── Polígonos ────────────────────────────────────────────────
+    if (geoLayer) map.removeLayer(geoLayer);
     geoLayer = L.geoJSON(geoCache, {
       style: function(feature) {
         var nome  = (feature.properties.name || '').toUpperCase().trim();
         var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
 
         if (!temDados) {
-          // Sem dados: off-white limpo
           return { color: '#C8D0D8', weight: 0.4, fillColor: '#F5F6F7', fillOpacity: 1 };
         }
         if (temFiltro && !isSel) {
-          // Não selecionada: apagada
-          return { color: '#D0D8E0', weight: 0.3, fillColor: '#F5F6F7', fillOpacity: 0.5 };
+          return { color: '#D0D8E0', weight: 0.3, fillColor: '#F5F6F7', fillOpacity: 0.4 };
         }
-        // Com dados: escala branco → navy
         var atend = atendMap[nome] || 0;
         var t = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
         var r = Math.round(238 + (15  - 238) * t);
@@ -154,40 +182,44 @@
     bounds = geoLayer.getBounds();
     map.fitBounds(bounds, { padding: [8, 8], animate: false });
 
-    // ── Camada de bolhas ─────────────────────────────────────────
-    if (bubbleLayer) map.removeLayer(bubbleLayer);
-    bubbleLayer = L.layerGroup().addTo(map);
+    // ── Pins ──────────────────────────────────────────────────────
+    if (pinLayer) map.removeLayer(pinLayer);
+    pinLayer = L.layerGroup().addTo(map);
 
+    // Pins das cidades com atendimentos
     if (temDados) {
       geoCache.features.forEach(function(f) {
         var nome  = (f.properties.name || '').toUpperCase().trim();
         var atend = atendMap[nome] || 0;
         if (atend === 0) return;
-
         var isSel = !temFiltro || (selecionadas && selecionadas.has(nome));
         if (!isSel) return;
+        if (nome === 'BELO HORIZONTE') return; // BH tem pin especial abaixo
 
-        var c      = getCentroid(f);
-        var t      = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
-        var radius = 3 + t * 18; // entre 3px e 21px
+        var t    = maxAtend > 0 ? Math.sqrt(atend / maxAtend) : 0;
+        var icon = getPinCidade(t);
+        var c    = getCentroid(f);
 
-        L.circleMarker([c.lat, c.lng], {
-          radius:      radius,
-          fillColor:   '#C9A84C',
-          color:       '#9B7A2A',
-          weight:      1,
-          fillOpacity: 0.75,
-          interactive: false
-        }).addTo(bubbleLayer);
+        L.marker([c.lat, c.lng], { icon: icon, interactive: true, zIndexOffset: 100 })
+          .bindTooltip('<strong>' + f.properties.name + '</strong>' + fmt(atend) + ' atendimentos',
+            { className: 'tooltip-mapa', sticky: true })
+          .addTo(pinLayer);
       });
     }
 
-    // ── Camada de labels ─────────────────────────────────────────
+    // Pin do Hospital da Baleia — sempre presente
+    L.marker([HOSPITAL_LAT, HOSPITAL_LNG], {
+      icon: PIN_HOSPITAL, interactive: true, zIndexOffset: 1000
+    })
+    .bindTooltip('<strong>Hospital da Baleia</strong>Belo Horizonte / MG',
+      { className: 'tooltip-mapa', sticky: true })
+    .addTo(pinLayer);
+
+    // ── Labels ───────────────────────────────────────────────────
     if (labelLayer) map.removeLayer(labelLayer);
     labelLayer = L.layerGroup().addTo(map);
 
     if (temFiltro) {
-      // Filtro ativo: só o nome da(s) cidade(s) selecionada(s)
       geoCache.features.forEach(function(f) {
         var nome  = f.properties.name || '';
         var nomeU = nome.toUpperCase().trim();
@@ -198,24 +230,11 @@
           interactive: false, keyboard: false
         }).addTo(labelLayer);
       });
-    } else {
-      // Sem filtro: só Belo Horizonte
-      geoCache.features.forEach(function(f) {
-        var nome  = f.properties.name || '';
-        var nomeU = nome.toUpperCase().trim();
-        if (nomeU !== 'BELO HORIZONTE') return;
-        var c = getCentroid(f);
-        L.marker([c.lat, c.lng], {
-          icon: L.divIcon({ className: 'lbl-capital', html: nome, iconSize: null }),
-          interactive: false, keyboard: false
-        }).addTo(labelLayer);
-      });
     }
 
     setTimeout(reenquadrar, 150);
   }
 
-  // ── Escuta postMessage do Power BI ───────────────────────────
   window.addEventListener('message', function(event) {
     try {
       var raw = typeof event.data === 'string' ? event.data.trim() : '';
@@ -234,11 +253,12 @@
     return null;
   }
 
-  // ── Carrega GeoJSON ──────────────────────────────────────────
   fetch(GEOJSON_URL)
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(geo) {
       geoCache = geo;
+      // Pré-calcula centroides
+      geo.features.forEach(function(f) { getCentroid(f); });
       renderMapa(tryDataValues());
       statusEl.classList.add('hidden');
       setTimeout(reenquadrar, 200);
