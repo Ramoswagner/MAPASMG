@@ -8,102 +8,105 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { width: 100%; height: 100%; overflow: hidden; }
+  body { width: 100%; height: 100%; overflow: hidden; background: transparent; position: relative; }
+  #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; }
+  .leaflet-container { background: transparent !important; font-family: 'Segoe UI', sans-serif; }
 
-  html {
-    width: 100%; height: 100%; overflow: hidden;
-  }
-
-  body {
-    width: 100%; height: 100%;
-    overflow: hidden;
-    background: transparent;
-    position: relative;
-  }
-
-  #map {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: transparent;
-  }
-
-  .leaflet-container {
-    background: transparent !important;
-    font-family: 'Segoe UI', sans-serif;
-  }
-
-  /* Rótulos das cidades — sombra branca para legibilidade sobre o mapa */
   .lbl {
-    font-size: 6px;
-    font-weight: 700;
-    color: #1A2940;
-    white-space: nowrap;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    text-shadow:
-      0 0  2px #fff, 0 0 2px #fff,
-      1px 1px 2px #fff, -1px -1px 2px #fff;
+    font-size: 6px; font-weight: 700; color: #1A2940;
+    white-space: nowrap; background: transparent; border: none; box-shadow: none;
+    text-shadow: 0 0 2px #fff, 0 0 2px #fff, 1px 1px 2px #fff, -1px -1px 2px #fff;
     pointer-events: none;
   }
 
-  /* Mensagem de carregamento / erro — evita tela branca silenciosa */
   #status {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 8px;
-    font-family: 'Segoe UI', sans-serif;
-    color: #6B7E99;
-    font-size: 13px;
-    z-index: 500;
-    pointer-events: none;
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 8px;
+    font-family: 'Segoe UI', sans-serif; color: #6B7E99; font-size: 13px;
+    z-index: 500; pointer-events: none;
   }
   #status.hidden { display: none; }
   .spinner {
     width: 24px; height: 24px;
-    border: 3px solid #DDE4EC;
-    border-top-color: #0F2549;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    border: 3px solid #DDE4EC; border-top-color: #0F2549;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Tooltip customizado */
+  .tooltip-mapa {
+    background: rgba(15,37,73,0.92);
+    color: #fff;
+    border: 1px solid #C9A84C;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 12px;
+    pointer-events: none;
+  }
+  .tooltip-mapa strong { color: #C9A84C; display: block; margin-bottom: 2px; }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div id="status"><div class="spinner"></div><span>Carregando mapa de Minas Gerais…</span></div>
+<div id="status"><div class="spinner"></div><span>Carregando mapa…</span></div>
 
 <script>
 (function () {
-  var GEOJSON_URL =
-    'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-31-mun.json';
+  var GEOJSON_URL = 'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-31-mun.json';
 
-  var statusEl = document.getElementById('status');
-  var bounds = null;
+  // ── Lê dados do Power BI (campo Values do HTML Content) ──────────
+  // O visual injeta o valor da medida na variável global dataValues[0]
+  function lerDadosPBI() {
+    try {
+      if (typeof dataValues !== 'undefined' && dataValues && dataValues[0]) {
+        var raw = String(dataValues[0]).trim();
+        if (raw.startsWith('[')) return JSON.parse(raw);
+      }
+    } catch(e) { console.warn('Erro ao ler dataValues:', e); }
+    return null;
+  }
 
-  // Mapa estático (sem zoom/drag) — comporta-se como imagem vetorial
+  // Converte array [{cidade, atend}] em mapa { "Belo Horizonte": 1234 }
+  function buildAtendMap(dados) {
+    var m = {};
+    if (!dados) return m;
+    dados.forEach(function(d) {
+      if (d.cidade) m[d.cidade.toUpperCase().trim()] = Number(d.atend) || 0;
+    });
+    return m;
+  }
+
+  // ── Escala de cor: branco → azul navy (proporcional ao volume) ──
+  function getColor(atend, max) {
+    if (!atend || max === 0) return '#EEF2F7';
+    var t = Math.sqrt(atend / max); // raiz para destacar variações menores
+    // Interpola entre #EEF2F7 (quase branco) e #0F2549 (navy)
+    var r = Math.round(238 + (15  - 238) * t);
+    var g = Math.round(242 + (37  - 242) * t);
+    var b = Math.round(247 + (73  - 247) * t);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  function fmt(n) { return n.toLocaleString('pt-BR'); }
+
+  // ── Mapa ─────────────────────────────────────────────────────────
   var map = L.map('map', {
-    zoomControl: false,
-    attributionControl: false,
-    dragging: false,
-    scrollWheelZoom: false,
-    doubleClickZoom: false,
-    boxZoom: false,
-    keyboard: false,
-    tap: false,
-    zoomSnap: 0.1            // permite ajuste fino do enquadramento
+    zoomControl: false, attributionControl: false,
+    dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, boxZoom: false,
+    keyboard: false, tap: false, zoomSnap: 0.1
   });
 
-  // ── Reajuste em qualquer mudança de tamanho do visual ──────────
-  // ResizeObserver capta redimensionamento do iframe em tempo real.
+  var bounds = null;
+  var statusEl = document.getElementById('status');
+
   function reenquadrar() {
     if (!bounds) return;
     map.invalidateSize({ animate: false });
-    map.fitBounds(bounds, { padding: [10, 10], animate: false });
+    map.fitBounds(bounds, { padding: [8, 8], animate: false });
   }
 
   if (window.ResizeObserver) {
@@ -111,46 +114,64 @@
   }
   window.addEventListener('resize', reenquadrar);
 
-  // ── Carregamento do GeoJSON (uma única vez) ────────────────────
+  // ── Carrega GeoJSON e aplica dados ───────────────────────────────
   fetch(GEOJSON_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (geo) {
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(geo) {
+      var dadosPBI  = lerDadosPBI();
+      var atendMap  = buildAtendMap(dadosPBI);
+      var temDados  = dadosPBI !== null;
+
+      // Máximo para escala de cor
+      var maxAtend = 0;
+      if (temDados) {
+        Object.values(atendMap).forEach(function(v) { if (v > maxAtend) maxAtend = v; });
+      }
+
       var layer = L.geoJSON(geo, {
-        style: {
-          color: '#0F2549',        // contorno navy
-          weight: 0.6,
-          fillColor: '#3B6EA5',    // preenchimento azul translúcido
-          fillOpacity: 0.08
+        style: function(feature) {
+          var nome   = feature.properties.name || '';
+          var atend  = atendMap[nome.toUpperCase().trim()] || 0;
+          var fill   = temDados ? getColor(atend, maxAtend) : '#D6E4F0';
+          return {
+            color:       '#0F2549',
+            weight:      0.6,
+            fillColor:   fill,
+            fillOpacity: 1
+          };
+        },
+        onEachFeature: function(feature, lyr) {
+          var nome  = feature.properties.name || '';
+          var atend = atendMap[nome.toUpperCase().trim()] || 0;
+          var tip   = temDados
+            ? '<strong>' + nome + '</strong>' + fmt(atend) + ' atendimentos'
+            : '<strong>' + nome + '</strong>';
+          lyr.bindTooltip(tip, { className: 'tooltip-mapa', sticky: true });
         }
       }).addTo(map);
 
       bounds = layer.getBounds();
-      map.fitBounds(bounds, { padding: [10, 10], animate: false });
+      map.fitBounds(bounds, { padding: [8, 8], animate: false });
 
-      // Rótulos no centro de cada município
-      geo.features.forEach(function (f) {
-        var nome = (f.properties && (f.properties.name || f.properties.NM_MUN)) || '';
+      // Rótulos dos municípios
+      geo.features.forEach(function(f) {
+        var nome = (f.properties && f.properties.name) || '';
         if (!nome) return;
         var c = L.geoJSON(f).getBounds().getCenter();
         L.marker(c, {
           icon: L.divIcon({ className: 'lbl', html: nome, iconSize: null }),
-          interactive: false,
-          keyboard: false
+          interactive: false, keyboard: false
         }).addTo(map);
       });
 
       statusEl.classList.add('hidden');
-      // Garante enquadramento após o layout estabilizar
       setTimeout(reenquadrar, 200);
     })
-    .catch(function (err) {
+    .catch(function(err) {
       statusEl.innerHTML =
         '<span style="color:#B23A48">Não foi possível carregar o mapa.</span>' +
-        '<span style="font-size:11px">Verifique o acesso à internet do relatório.</span>';
-      console.error('Falha ao carregar GeoJSON:', err);
+        '<span style="font-size:11px">Verifique a conexão com a internet.</span>';
+      console.error('GeoJSON error:', err);
     });
 })();
 </script>
